@@ -1,0 +1,26 @@
+target/
+.build/
+.env
+*.log
+.DS_Store
+
+.env.*
+!.env.example
+
+# Private tools and hosting settings stay on this computer.
+.codex/
+.agents/
+.aws/
+.vercel/
+*.pem
+*.key
+
+# Keep project documents on this computer only.
+/docs/
+
+# Python creates these files when scripts run.
+__pycache__/
+*.pyc
+
+# This planning file stays on this computer only.
+/DEVELOPMENT.md
