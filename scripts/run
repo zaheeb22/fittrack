@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+FITTRACK_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+. "$FITTRACK_ROOT/scripts/java-env.sh"
+FITTRACK_JAR="$FITTRACK_ROOT/target/fittrack-0.0.1-SNAPSHOT.jar"
+if [ ! -f "$FITTRACK_JAR" ]; then echo 'Build first: ./scripts/mvn package' >&2; exit 1; fi
+exec "$FITTRACK_JAVA" -jar "$FITTRACK_JAR" "$@"

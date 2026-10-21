@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+FITTRACK_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+. "$FITTRACK_ROOT/scripts/java-env.sh"
+cd "$FITTRACK_ROOT"
+if command -v mvn >/dev/null 2>&1; then exec mvn "$@"; fi
+# This uses the temporary Maven copy if Maven is not available through PATH.
+if [ -x /private/tmp/apache-maven-3.9.9/bin/mvn ]; then
+  exec /private/tmp/apache-maven-3.9.9/bin/mvn -Dmaven.repo.local="$FITTRACK_ROOT/.build/m2" "$@"
+fi
+echo 'Install Maven or use Eclipse Run As > Maven build.' >&2
+exit 1
