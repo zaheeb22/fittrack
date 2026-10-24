@@ -21,5 +21,6 @@ FitTrack is a Java project for recording members, workouts and fitness goals.
 - Minutes and sessions goals.
 - Shared storage methods and memory storage.
 - Mysql tables and sample records.
+- Jdbc storage and database tests.
 
 The application entry point is not yet included.
