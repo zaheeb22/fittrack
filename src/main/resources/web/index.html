@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Track members, workouts and fitness goals with FitTrack.">
+  <title>FitTrack | Fitness dashboard</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <!-- The side menu lets the user move between the four pages. -->
+  <aside class="sidebar">
+    <a class="brand" href="#overview"><span class="brand-mark" aria-hidden="true">f.</span>FitTrack<span class="brand-dot">●</span></a>
+    <p class="menu-label">YOUR WORKSPACE</p>
+    <nav aria-label="Main menu">
+      <a href="#overview" data-page="overview" aria-current="page"><span aria-hidden="true">◫</span>Overview</a>
+      <a href="#members" data-page="members"><span aria-hidden="true">♧</span>Members</a>
+      <a href="#workouts" data-page="workouts"><span aria-hidden="true">↗</span>Workouts</a>
+      <a href="#challenges" data-page="challenges"><span aria-hidden="true">◎</span>Challenges</a>
+    </nav>
+    <div class="sidebar-note"><span class="note-icon" aria-hidden="true">✦</span><strong>Small steps. Real progress.</strong><p>Record a workout.<br>Work towards your next goal.</p></div>
+    <div class="workspace-label"><span class="status-dot"></span> Your workspace</div>
+  </aside>
+
+  <main>
+    <header class="topbar"><span>FITNESS CHALLENGE TRACKER</span><div><span id="today"></span><button id="refresh" class="button quiet" type="button">↻ Refresh</button></div></header>
+    <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+    <div id="error" class="error" role="alert" hidden></div>
+    <noscript><p class="error">Please turn on JavaScript to use the dashboard.</p></noscript>
+
+    <!-- The overview uses real records returned by the Java application. -->
+    <section id="page-overview" class="page" aria-labelledby="overview-title">
+      <div class="page-heading"><div><p class="eyebrow">MAKE EVERY SESSION COUNT</p><h1 id="overview-title">Your progress, in view.</h1><p class="muted">A little movement today. A stronger tomorrow.</p></div><button class="button primary" data-add="workouts" type="button">+ Record workout</button></div>
+      <div class="hero"><div><span class="pill">YOUR NEXT CHAPTER</span><h2>Build a habit.<br>Reach your goals.</h2><p>Keep your workouts and challenges in one place.<br>Every session is a step forward.</p><a href="#challenges" class="button light">Explore challenges <span aria-hidden="true">↗</span></a></div><div class="hero-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="art-badge">KEEP GOING ↗</div><div class="bars"><i></i><i></i><i></i><i></i><i></i></div><div class="art-caption">ONE SESSION AT A TIME</div></div></div>
+      <div class="section-heading"><h2>At a glance</h2><label class="filter-label">Show progress for <select id="member-filter"><option value="all">All members</option></select></label></div>
+      <div class="stats"><article><span>Members</span><strong id="stat-members">—</strong><small>People in your workspace</small></article><article><span>Workouts</span><strong id="stat-workouts">—</strong><small>Completed sessions</small></article><article><span>Exercise minutes</span><strong id="stat-minutes">—</strong><small>Total time moving</small></article><article><span>Goals reached</span><strong id="stat-goals">—</strong><small id="goals-caption">Completed challenges</small></article></div>
+      <div class="overview-grid"><section class="panel"><div class="section-heading"><h2>Recent workouts</h2><a href="#workouts">View all ↗</a></div><div id="recent-workouts"><p class="empty">Loading your workouts…</p></div></section><section class="panel"><div class="section-heading"><h2>Challenge progress</h2><a href="#challenges">View all ↗</a></div><div id="overview-challenges"><p class="empty">Loading your challenges…</p></div></section></div>
+      <div class="getting-started" id="getting-started" hidden><div><span class="eyebrow">START HERE</span><h2>Your first step starts with a member.</h2><p>Add a member, record their first workout, then set a challenge.</p></div><button class="button primary" data-add="members" type="button">+ Add your first member</button></div>
+    </section>
+
+    <section id="page-members" class="page" aria-labelledby="members-title" hidden><div class="page-heading"><div><p class="eyebrow">YOUR PEOPLE</p><h1 id="members-title">Members</h1><p class="muted">Manage the people taking part in your fitness challenges.</p></div><button class="button primary" data-add="members" type="button">+ Add member</button></div><div class="panel"><div class="section-heading"><h2>Member directory</h2><span id="members-count" class="muted"></span></div><div id="members-list" class="table-scroll"></div></div></section>
+    <section id="page-workouts" class="page" aria-labelledby="workouts-title" hidden><div class="page-heading"><div><p class="eyebrow">SHOW UP. MOVE FORWARD.</p><h1 id="workouts-title">Workouts</h1><p class="muted">Record completed activities and keep track of exercise time.</p></div><button class="button primary" data-add="workouts" type="button">+ Record workout</button></div><div class="panel"><div class="section-heading"><h2>Workout history</h2><span id="workouts-count" class="muted"></span></div><div id="workouts-list" class="table-scroll"></div></div></section>
+    <section id="page-challenges" class="page" aria-labelledby="challenges-title" hidden><div class="page-heading"><div><p class="eyebrow">SOMETHING TO AIM FOR</p><h1 id="challenges-title">Challenges</h1><p class="muted">Set a minutes or sessions goal and watch your progress grow.</p></div><button class="button primary" data-add="challenges" type="button">+ Add challenge</button></div><p class="help-text">Only the member’s workouts within the challenge dates count towards their goal.</p><div id="challenges-list" class="challenge-grid"></div></section>
+    <footer>FitTrack <span>Make movement a habit.</span><a href="/api" target="_blank" rel="noopener">View API information ↗</a></footer>
+  </main>
+
+  <!-- One form is reused for adding and editing a record. -->
+  <dialog id="record-dialog" aria-labelledby="form-title"><form id="record-form"><div class="dialog-heading"><div><p class="eyebrow">FITTRACK</p><h2 id="form-title">Add record</h2></div><button class="icon-button" type="button" id="close-form" aria-label="Close form">×</button></div><p id="form-help" class="muted"></p><div id="form-fields" class="form-fields"></div><p id="form-error" class="error" role="alert" hidden></p><div class="dialog-actions"><button class="button quiet" id="cancel-form" type="button">Cancel</button><button class="button primary" id="save-record" type="submit">Save record</button></div></form></dialog>
+  <dialog id="delete-dialog" aria-labelledby="delete-title"><div class="dialog-heading"><h2 id="delete-title">Delete this record?</h2></div><p id="delete-message"></p><p id="delete-error" class="error" role="alert" hidden></p><div class="dialog-actions"><button class="button quiet" id="cancel-delete" type="button">Keep record</button><button class="button danger" id="confirm-delete" type="button">Delete record</button></div></dialog>
+</body>
+</html>
