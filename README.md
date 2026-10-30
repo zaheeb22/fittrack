@@ -28,5 +28,6 @@ FitTrack is a Java project for recording members, workouts and fitness goals.
 - Solid colours and responsive page styles.
 - Connected the webpage forms to the java api.
 - Web request tests and api checks.
+- The vercel setup and example settings.
 
 The Java server and webpage files are included. The app uses Java 25 and Maven.

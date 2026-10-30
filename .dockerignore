@@ -1,0 +1,15 @@
+.git
+.build
+target
+.env
+.env.*
+.codex
+.agents
+.aws
+.settings
+.classpath
+.project
+docs
+scripts
+database
+*.log

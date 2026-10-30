@@ -1,0 +1,23 @@
+# Vercel detects this file and builds the Java application.
+# 1. This builds and tests the project using Java 25 and Maven.
+FROM maven:3.9.11-eclipse-temurin-25 AS build
+WORKDIR /build
+COPY pom.xml .
+COPY src ./src
+RUN mvn -B verify
+
+# 2. This runs the finished application using a system account without admin access.
+FROM eclipse-temurin:25-jre
+WORKDIR /app
+RUN groupadd --system fittrack && useradd --system --gid fittrack fittrack
+COPY --from=build --chown=fittrack:fittrack /build/target/fittrack-0.0.1-SNAPSHOT.jar /app/fittrack.jar
+USER fittrack
+# This lets the hosted application receive requests from outside its container.
+# The application checks that sign-in details are set before accepting these requests.
+ENV FITTRACK_BIND_HOST=0.0.0.0
+# This sets port 8080 for the application and Vercel to use.
+ENV PORT=8080
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "/app/fittrack.jar"]
+# This starts MySQL mode so records stay saved when the application stops.
+CMD ["--mysql"]
