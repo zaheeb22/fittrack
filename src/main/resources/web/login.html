@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FitTrack | Sign in</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/login.js" defer></script>
+</head>
+<body class="login-page">
+  <!-- This form signs admins and members in without using the browser password popup. -->
+  <main class="login-card">
+    <a class="brand" href="/login"><span class="brand-mark" aria-hidden="true">f.</span>FitTrack</a>
+    <h1>Sign in</h1>
+    <p class="muted">Keep your workouts and goals in one place.</p>
+    <form id="login-form" method="post" action="/auth/login">
+      <label class="form-field">Username
+        <input name="username" autocomplete="username" required maxlength="200">
+      </label>
+      <label class="form-field">Password
+        <input name="password" type="password" autocomplete="current-password" required maxlength="2000">
+      </label>
+      <p id="login-error" class="error" role="alert" hidden></p>
+      <button id="sign-in" class="button primary" type="submit">Sign in</button>
+    </form>
+    <noscript><p class="error">JavaScript is needed to sign in.</p></noscript>
+  </main>
+</body>
+</html>

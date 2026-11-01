@@ -35,3 +35,17 @@ CREATE TABLE IF NOT EXISTS challenges (
 INSERT IGNORE INTO members VALUES (1,'Alex Johnson','alex@example.com',25);
 INSERT IGNORE INTO workouts VALUES (1,1,'Running',30,'2026-10-01'),(2,1,'Cycling',45,'2026-10-02');
 INSERT IGNORE INTO challenges VALUES (1,1,'October minutes','MINUTES',150,'2026-10-01','2026-10-31'),(2,1,'October sessions','SESSIONS',3,'2026-10-01','2026-10-31');
+
+-- This table stores session hashes and expiry times. Passwords are not stored here.
+CREATE TABLE IF NOT EXISTS login_sessions (
+ token_hash CHAR(64) PRIMARY KEY,
+ expires_at BIGINT NOT NULL
+);
+
+-- This stores member logins. Deleting a member also removes their login.
+CREATE TABLE IF NOT EXISTS member_accounts (
+ member_id INT PRIMARY KEY,
+ username VARCHAR(100) NOT NULL UNIQUE,
+ password_hash VARCHAR(200) NOT NULL,
+ FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE
+);

@@ -19,7 +19,15 @@ final class DashboardPages {
           "/styles.css",
           "styles.css",
           "/favicon.svg",
-          "favicon.svg");
+          "favicon.svg",
+          "/favicon.ico",
+          "favicon.svg",
+          "/login",
+          "login.html",
+          "/login.html",
+          "login.html",
+          "/login.js",
+          "login.js");
 
   private DashboardPages() {}
 
@@ -49,7 +57,7 @@ final class DashboardPages {
                   ? "text/javascript; charset=utf-8"
                   : fileName.endsWith(".svg") ? "image/svg+xml" : "text/html; charset=utf-8";
       request.getResponseHeaders().set("Content-Type", contentType);
-      request.getResponseHeaders().set("Cache-Control", "no-cache");
+      request.getResponseHeaders().set("Cache-Control", "no-store");
       request.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
       request
           .getResponseHeaders()

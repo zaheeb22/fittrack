@@ -5,9 +5,8 @@ import java.sql.*;
 import java.util.*;
 
 /**
- * Adds, reads, changes and deletes database records using JDBC.
- * Prepared statements keep user values separate from SQL commands.
- * Connections, statements and results are closed after use.
+ * Adds, reads, changes and deletes database records using JDBC. Prepared statements keep user
+ * values separate from SQL commands. Connections, statements and results are closed after use.
  *
  * @param <T> entity type
  */
@@ -190,6 +189,38 @@ public final class JdbcRepository<T extends Identifiable> implements Repository<
         var s = c.prepareStatement("DELETE FROM " + table + " WHERE id=?")) {
       s.setInt(1, id);
       return s.executeUpdate() > 0;
+    } catch (SQLException e) {
+      throw failure(e);
+    }
+  }
+
+  /** {@inheritDoc} */
+  @Override
+  public boolean deleteMatching(int id, java.util.function.Predicate<T> permitted) {
+    // The row stays locked until its ownership check and deletion have finished.
+    try (var c = connections.open()) {
+      c.setAutoCommit(false);
+      try {
+        boolean removed = false;
+        try (var find =
+            c.prepareStatement(
+                "SELECT id," + columns + " FROM " + table + " WHERE id=? FOR UPDATE")) {
+          find.setInt(1, id);
+          try (var rows = find.executeQuery()) {
+            if (rows.next() && permitted.test(codec.read(rows))) {
+              try (var remove = c.prepareStatement("DELETE FROM " + table + " WHERE id=?")) {
+                remove.setInt(1, id);
+                removed = remove.executeUpdate() > 0;
+              }
+            }
+          }
+        }
+        c.commit();
+        return removed;
+      } catch (SQLException | RuntimeException e) {
+        c.rollback();
+        throw e;
+      }
     } catch (SQLException e) {
       throw failure(e);
     }

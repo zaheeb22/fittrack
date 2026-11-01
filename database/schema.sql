@@ -27,3 +27,17 @@ CREATE TABLE IF NOT EXISTS challenges (
  CHECK (end_date >= start_date),
  CONSTRAINT fk_challenge_member FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE RESTRICT
 );
+
+-- This table stores session hashes and expiry times. Passwords are not stored here.
+CREATE TABLE IF NOT EXISTS login_sessions (
+ token_hash CHAR(64) PRIMARY KEY,
+ expires_at BIGINT NOT NULL
+);
+
+-- This stores member logins. Deleting a member also removes their login.
+CREATE TABLE IF NOT EXISTS member_accounts (
+ member_id INT PRIMARY KEY,
+ username VARCHAR(100) NOT NULL UNIQUE,
+ password_hash VARCHAR(200) NOT NULL,
+ FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE
+);

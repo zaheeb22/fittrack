@@ -45,4 +45,13 @@ public final class InMemoryRepository<T extends Identifiable> implements Reposit
   public synchronized boolean delete(int id) {
     return entities.remove(id) != null;
   }
+
+  /** {@inheritDoc} */
+  @Override
+  public synchronized boolean deleteMatching(int id, java.util.function.Predicate<T> permitted) {
+    T entity = entities.get(id);
+    if (entity == null || !permitted.test(entity)) return false;
+    entities.remove(id);
+    return true;
+  }
 }

@@ -48,4 +48,14 @@ public interface Repository<T extends Identifiable> {
    * @return true if a record was deleted
    */
   boolean delete(int id);
+
+  /**
+   * Deletes a record only if it still passes the supplied check. The check and deletion run
+   * together so another update cannot change its owner in between.
+   *
+   * @param id record ID
+   * @param permitted rule that must pass before deletion
+   * @return true if the record was deleted
+   */
+  boolean deleteMatching(int id, java.util.function.Predicate<T> permitted);
 }

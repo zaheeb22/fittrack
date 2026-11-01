@@ -26,6 +26,10 @@ public final class FitTrackApp {
       throw new IllegalArgumentException("Use --demo, --memory or --mysql");
     var settings = com.fittrack.web.ServerSettings.fromEnvironment(System.getenv());
     com.fittrack.service.FitnessService service;
+    com.fittrack.repository.SessionRepository sessions =
+        new com.fittrack.repository.MemorySessionRepository();
+    com.fittrack.repository.Repository<com.fittrack.model.MemberAccount> accounts =
+        new com.fittrack.repository.InMemoryRepository<>();
     // MySQL mode stores records in the database; memory mode keeps them until the app stops.
     if (mysql) {
       String url = required("FITTRACK_DB_URL"),
@@ -39,6 +43,15 @@ public final class FitTrackApp {
               com.fittrack.repository.JdbcRepository.workouts(connections),
               com.fittrack.repository.JdbcRepository.challenges(connections));
       service.members(); // Fail at startup if schema or connection is unavailable.
+      if (settings.hasSignIn()) {
+        // Shared database sessions let logout take effect across hosted app instances.
+        var savedSessions = new com.fittrack.repository.JdbcSessionRepository(connections);
+        savedSessions.initialise();
+        sessions = savedSessions;
+        var savedAccounts = new com.fittrack.repository.JdbcAccountRepository(connections);
+        savedAccounts.initialise();
+        accounts = savedAccounts;
+      }
     } else
       service =
           new com.fittrack.service.FitnessService(
@@ -46,7 +59,7 @@ public final class FitTrackApp {
               new com.fittrack.repository.InMemoryRepository<>(),
               new com.fittrack.repository.InMemoryRepository<>());
     // This starts the web server and closes its resources when the application stops.
-    var server = new com.fittrack.web.FitnessHttpServer(service, settings);
+    var server = new com.fittrack.web.FitnessHttpServer(service, settings, sessions, accounts);
     Runtime.getRuntime().addShutdownHook(new Thread(server::close));
     server.start();
     System.out.println(

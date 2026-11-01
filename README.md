@@ -38,9 +38,9 @@ Browser → Vercel → Java application → JDBC → Aiven MySQL
 - **Eclipse** opens, edits, builds and tests the Java project.
 - **Maven** downloads Java dependencies and builds the application.
 
-The hosted webpage needs the FitTrack admin sign-in details. Its address is available in the Vercel project dashboard. The source repository address follows the pattern `https://github.com/zaheeb22/fittrack`.
+The hosted webpage needs an admin or member login. Its address is available in the Vercel project dashboard. The source repository address follows the pattern `https://github.com/zaheeb22/fittrack`.
 
-There are three database tables:
+There are three main database tables:
 
 | Table          | What it stores                    | Link to another table                  |
 | -------------- | --------------------------------- | -------------------------------------- |
@@ -250,7 +250,7 @@ Then load the table definitions. This is a **MySQL Shell command**, using the cu
 \source /Users/YOUR_MAC_USERNAME/eclipse-workspace/fittrack/database/schema.sql
 ```
 
-On another computer, replace that path with the actual project path. `database/schema.sql` creates the three tables without creating a database or inserting sample people. Existing tables are left in place; this script does not update an older table structure.
+On another computer, replace that path with the actual project path. `database/schema.sql` creates the three main tables, `login_sessions` and `member_accounts` without creating a database or inserting sample people. Existing tables are left in place; this script does not update an older table structure.
 
 Confirm the tables:
 
@@ -258,7 +258,7 @@ Confirm the tables:
 SHOW TABLES;
 ```
 
-Expected names: `members`, `workouts`, `challenges`.
+Expected names: `members`, `workouts`, `challenges`, `login_sessions` and `member_accounts`. The first three hold project records. The other two hold sessions and member login details.
 
 ### Add the sample records
 
@@ -347,7 +347,7 @@ At the **mysql> SQL prompt**:
 SOURCE /Users/YOUR_MAC_USERNAME/eclipse-workspace/fittrack/database/fittrack.sql;
 ```
 
-This creates the local `fittrack` database, its three tables and a small set of demonstration records. The classic `mysql` client uses `SOURCE file;`; MySQL Shell can use `\source file`.
+This creates the local `fittrack` database, the three main tables, session and member-account tables, and a small set of demonstration records. The classic `mysql` client uses `SOURCE file;`; MySQL Shell can use `\source file`.
 
 Check the result:
 
@@ -490,7 +490,45 @@ Start with **Members**, add a member, then record a workout for that person. Cre
 
 Only a member's workouts inside the challenge dates count towards their goal. Both boundary dates count. A member cannot be deleted while workouts or challenges still refer to them; delete those records first. IDs are unique per table. The form suggests an ID; an existing record's ID stays fixed when editing.
 
-The current hosted app has **one shared admin login**. Member records are profiles, not individual login accounts. Anyone with the admin credentials can view and manage all records. Individual member login has not been implemented.
+### Admin and member access
+
+The app has two kinds of account. The admin login uses the environment variables. Each member login is linked to one member profile in the database. A member cannot choose another member's profile or make themselves an admin.
+
+| Action | Admin | Member |
+| --- | --- | --- |
+| Read profiles, workouts and challenges | Everyone's records | Own records only |
+| Add or edit profiles, workouts and challenges | Yes | No |
+| Delete profiles and workouts | Yes, subject to linked-record checks | No |
+| Delete challenges and fitness goals | Any member's goals | Own goals only |
+| Create, reset or remove member logins | Yes | No |
+
+Here, a workout plan means an existing challenge or fitness goal. Completed workouts remain separate records. These rules are checked by Java for every API request, including requests made outside the webpage.
+
+### Give a member a login
+
+1. Start the app in MySQL mode with admin sign-in enabled, then sign in as the admin.
+2. Open **Members**. Add the member's profile first if it does not exist.
+3. Choose **Set up login** beside that member. Enter a unique username and a password of 16 to 200 characters. Usernames allow letters, numbers and `@ . _ + -`, with 3 to 100 characters. The member email is suggested; it can be replaced. Usernames are not case-sensitive.
+4. Save the login. Share the details with that member privately.
+5. Log out. The member signs in at the same `/login` page with their own details. They see **My profile**, their workout history and their challenges. Their challenges have a Delete button. They cannot add or edit records.
+
+**Reset login** replaces the username and password and ends earlier sessions for that account. **Remove login** ends access while keeping the profile, workouts and challenges. Deleting a member's profile also removes their login, after the admin has removed the linked workouts and challenges. Members ask the admin to correct their details or reset a forgotten password; there is no self-registration or email reset feature.
+
+Member passwords are saved as salted PBKDF2-HMAC-SHA256 hashes with 600,000 iterations, following the [OWASP password storage guidance](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html). A salt is a different random value for each saved password. The API never returns passwords or password hashes. Member passwords do not go in `.env`; that file holds the single admin login and database connection settings.
+
+Memory mode can demonstrate these accounts too, but the accounts and records disappear when the app stops. MySQL mode saves them between restarts. Local mode without sign-in gives full access for demonstrations and cannot manage member logins.
+
+### Sign in and log out
+
+When sign-in is enabled, the app opens `/login`. The admin enters the values set in `FITTRACK_ADMIN_USER` and `FITTRACK_ADMIN_PASSWORD`. Members enter the details given to them by the admin. The **Log out** button is beside Refresh in the dashboard header.
+
+Signing in creates a random session cookie. Logging out deletes the saved session and clears that cookie, then returns to the login page. The old cookie cannot be reused. The browser password popup is no longer used, and Basic authentication headers no longer grant API access.
+
+Sessions last up to eight hours. In MySQL mode, session hashes are saved in `login_sessions` so logout works across hosted app instances. The table contains only a token hash and expiry time, not member records or passwords. A hash is a one-way value used to check the session code without saving the original code. Changing the admin credentials makes earlier sessions unusable. If sign-in is disabled for a local demonstration, no login is required and the logout button stays hidden.
+
+The app checks for `login_sessions` and `member_accounts` at startup when MySQL and admin sign-in are enabled. If either table is missing and the database account can create tables, the app creates it automatically. Otherwise, a database administrator can run the updated `database/schema.sql` once; existing member, workout and challenge records remain unchanged. The application database account needs SELECT, INSERT, UPDATE and DELETE access to these tables, already covered by the local `fittrack.*` grant above.
+
+Cookies are HttpOnly and SameSite=Strict, and hosted cookies are marked Secure. Sign-in and record-changing requests need `X-FitTrack-Request: true`; cross-site requests are rejected. Five wrong sign-ins from one connection address temporarily block further attempts on that app instance for five minutes. This is a basic limit, not a shared account lockout system. The cookie and request checks use the approaches described in the [OWASP session guide](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html) and [OWASP cross-site request guide](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html).
 
 ### API addresses
 
@@ -502,10 +540,15 @@ The Java server also provides a REST API:
 | `/members/{id}`, `/workouts/{id}`, `/challenges/{id}` | GET reads; PUT updates; DELETE removes                                                |
 | `/members/{id}/summary`                                   | GET returns workout count, total minutes and longest duration                         |
 | `/challenges/{id}/progress`                               | GET returns achieved amount, target, percentage and completion                        |
+| `/auth/login` | POST checks admin or member credentials and sets the session cookie |
+| `/accounts` | Admin-only GET lists member usernames without hashes |
+| `/accounts/{memberId}` | Admin-only PUT creates or resets a login; DELETE removes it |
+| `/auth/logout` | POST ends the session and clears the cookie |
+| `/auth/session` | GET reports sign-in status, account role and member ID |
 | `/api`                                                    | GET returns application information                                                   |
 | `/health`                                                 | GET returns a small status response without sign-in; it is not a database health test |
 
-Requests that send record data use JSON and `Content-Type: application/json`. Common responses are 200 for success, 201 for creation, 204 for deletion, 400 for invalid input, 401 for missing/wrong sign-in, 404 for a missing record, and 409 for a duplicate or linked-record conflict.
+Requests that send record data use JSON and `Content-Type: application/json`. With admin sign-in enabled, first POST the username and password as JSON to `/auth/login`, retain the returned cookie, and send `X-FitTrack-Request: true` with each POST, PUT and DELETE. The API demo script does this automatically. These record actions are subject to the account permissions above. Common responses are 200 for success, 201 for creation, 204 for deletion, 400 for invalid input, 401 for missing/wrong sign-in, 403 for an action the account cannot perform, 404 for a missing record, and 409 for a duplicate or linked-record conflict.
 
 Example member JSON:
 
@@ -535,7 +578,7 @@ In **Terminal**:
 ./scripts/mvn clean verify javadoc:javadoc
 ```
 
-The current suite contains 24 JUnit tests covering calculations, challenge types, service rules, JDBC storage, HTTP handling and sign-in settings. The last verified run passed all 24. Test results are generated in `target/surefire-reports/`.
+The JUnit tests cover calculations, challenge types, service rules, JDBC storage, HTTP handling, login, logout, session expiry, shared database sessions, member permissions and account resets. Test results are generated in `target/surefire-reports/`.
 
 Database tests use **H2 in MySQL compatibility mode**. They check JDBC operations but do not replace checking the actual MySQL server. The user has connected Aiven and displayed saved records in the hosted webpage; a full recorded MySQL CRUD and restart check is still part of the assessment evidence.
 
@@ -570,6 +613,22 @@ FITTRACK_API_URL=https://YOUR_APP.vercel.app python3 scripts/api_demo.py
 ```
 
 The script uses HTTPS when sending credentials to an online server. Do not put credentials in URLs or paste them into chat.
+
+### Check the login and logout buttons
+
+The optional `scripts/test-login.cjs` checks the login form and logout action using test-only credentials on a local server. It does not use the live database. Start a separate server in one Terminal:
+
+```sh
+FITTRACK_PORT=8094 FITTRACK_ADMIN_USER=tester FITTRACK_ADMIN_PASSWORD='local-test-password-only' ./scripts/run --memory
+```
+
+In another Terminal, after installing jsdom as described below:
+
+```sh
+NODE_PATH=/private/tmp/fittrack-ui-check/node_modules FITTRACK_API_URL=http://127.0.0.1:8094 FITTRACK_ADMIN_USER=tester FITTRACK_ADMIN_PASSWORD='local-test-password-only' node scripts/test-login.cjs
+```
+
+The test checks that signing in clears the password form, the logout button appears, logout clears the cookie, and the old session is rejected. These are local demonstration credentials, not the credentials for the hosted app.
 
 ### Verify records survive a restart
 
@@ -683,7 +742,7 @@ This project already has `origin`. Check it with `git remote -v`; do not repeat 
 | `FITTRACK_ADMIN_PASSWORD` | Unique FitTrack sign-in password of at least 16 characters                                      |
 
 6. Click **Deploy** and inspect the build and runtime logs if it fails.
-7. Open the deployment URL and sign in using the **FitTrack admin** details, not the Aiven database credentials.
+7. Open the deployment URL and use the login page to sign in with the **FitTrack admin** details, not the Aiven database credentials. The Log out button ends that session.
 8. Add or edit a test record and confirm it appears in MySQL.
 
 Using the same database for Preview and Production means both deployments can change the same records. Use a separate test database if independent preview data is needed.
@@ -704,7 +763,7 @@ Vercel redeploys do not create tables or execute the sample SQL. Aiven stores re
 | `Address already in use`                           | Another server has the port. Stop the old instance or choose another`FITTRACK_PORT`.                                                          |
 | `Set FITTRACK_DB_URL` or another missing setting   | Supply that environment variable in the process that launches Java.`.env` is not loaded automatically.                                        |
 | `Use a sign-in password of at least 16 characters` | Set a longer`FITTRACK_ADMIN_PASSWORD`; redeploy if hosted.                                                                                    |
-| HTTP 401                                             | Sign-in is required or the credentials are incorrect. Use the admin variables. A private browser window can avoid previously saved credentials. |
+| HTTP 401                                             | Sign-in is required or the credentials are incorrect. Use the admin variables or the member login given by the admin. Sign in again at `/login` if the session has ended. |
 | `Access denied for user`                           | Check the database username, password and account permissions. This is separate from webpage sign-in.                                           |
 | `No database selected`                             | Run`USE defaultdb;` for Aiven or `USE fittrack;` locally before table commands.                                                             |
 | `Table ... doesn't exist`                          | Create the tables in the same database named in`FITTRACK_DB_URL`.                                                                             |
@@ -740,6 +799,7 @@ Vercel redeploys do not create tables or execute the sample SQL. Aiven stores re
 | `scripts/java-env.sh`                             | Finds Java for the workspace helper scripts                                  |
 | `scripts/run`                                     | Runs the built JAR                                                           |
 | `scripts/api_demo.py`                             | Checks API CRUD and goal progress                                            |
+| `scripts/test-login.cjs` | Optional login form and logout checks |
 | `scripts/test-dashboard.cjs`                      | Optional webpage action checks                                               |
 | `Dockerfile.vercel`                               | Builds and runs the hosted Java application                                  |
 | `.dockerignore`                                   | Keeps unnecessary or private files out of the container build input          |
@@ -754,3 +814,13 @@ The design uses an abstract `Challenge` with `MinutesChallenge` and `SessionsCha
 For the final assessment, prepare the Java source and tests, `pom.xml`, SQL setup/population scripts, generated Javadoc, class/schema diagram images or PDFs, report, genuine CRUD and persistence screenshots, and demonstration video. Capture Eclipse's Project Explorer, successful build Console and passing JUnit view as evidence of using Eclipse. Follow Canvas requirements for the final ZIP, deadline and any acknowledgement of sources or assistance.
 
 Keep `.env`, passwords, tokens, private keys and unrelated personal data out of the submission. Keep a backup of the submitted work. Local report files can be included in the assessment ZIP without being published to GitHub.
+
+### Check member access on a local test server
+
+With the separate memory-mode server above running and jsdom installed, this optional check creates two temporary members, workouts and goals. It tests the admin login form, the member's own profile, hidden admin controls and deletion of the member's own goal. It removes its test records afterwards. Use an empty memory-mode server; the script stops if its reserved member IDs `910001` or `910002` already exist.
+
+```sh
+NODE_PATH=/private/tmp/fittrack-ui-check/node_modules FITTRACK_API_URL=http://127.0.0.1:8094 FITTRACK_ADMIN_USER=tester FITTRACK_ADMIN_PASSWORD='local-test-password-only' node scripts/test-member-access.cjs
+```
+
+These credentials are examples for the separate local test server. They are not the hosted login.

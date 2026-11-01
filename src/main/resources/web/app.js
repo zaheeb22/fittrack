@@ -3,6 +3,8 @@
 // 1. This keeps a copy of the records for all four pages.
 const records = { members: [], workouts: [], challenges: [], progress: new Map() };
 const pageNames = ['overview', 'members', 'workouts', 'challenges'];
+let access = { role: 'NONE', memberId: 0 };
+let memberAccounts = [];
 let selectedMember = 'all';
 let editingRecord = null;
 let deletingRecord = null;
@@ -33,11 +35,16 @@ async function api(path, method = 'GET', body) {
   try {
     response = await fetch(path, {
       method,
-      headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+      headers: { 'X-FitTrack-Request': 'true', ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+      credentials: 'same-origin',
       body: body === undefined ? undefined : JSON.stringify(body)
     });
   } catch (error) {
     throw new Error('Cannot reach FitTrack. Check that the Java application is still running.');
+  }
+  if (response.status === 401) {
+    location.replace('/login');
+    throw new Error('Your session has ended. Please sign in again.');
   }
   const result = response.status === 204 ? null : await response.json();
   if (!response.ok) throw new Error(result.error || 'The request could not be completed.');
@@ -58,6 +65,7 @@ async function loadRecords() {
     const progress = await Promise.all(challenges.map(async (challenge) => [
       challenge.id, await api(`/challenges/${challenge.id}/progress`)
     ]));
+    memberAccounts = access.role === 'ADMIN' && access.authEnabled ? await api('/accounts') : [];
     // The screen data changes only after all requests finish successfully.
     records.members = members;
     records.workouts = workouts;
@@ -108,7 +116,7 @@ function updateMemberFilter() {
   if (selectedMember !== 'all' && !records.members.some((m) => String(m.id) === selectedMember)) {
     selectedMember = 'all';
   }
-  filter.replaceChildren(new Option('All members', 'all'));
+  filter.replaceChildren(new Option(access.role === 'MEMBER' ? 'My progress' : 'All members', 'all'));
   records.members.forEach((member) => filter.add(new Option(member.name, String(member.id))));
   filter.value = selectedMember;
 }
@@ -123,7 +131,21 @@ function actionButtons(resource, record) {
   remove.type = 'button';
   remove.setAttribute('aria-label', `Delete ${record.name || record.activityType}`);
   remove.addEventListener('click', () => openDelete(resource, record));
-  actions.append(edit, remove);
+  if (access.role === 'ADMIN') actions.append(edit);
+  if (access.role === 'ADMIN' || resource === 'challenges') actions.append(remove);
+  if (access.role === 'ADMIN' && access.authEnabled && resource === 'members') {
+    const account = memberAccounts.find((a) => a.memberId === record.id);
+    const login = make('button', 'button quiet', account ? 'Reset login' : 'Set up login');
+    login.type = 'button';
+    login.addEventListener('click', () => openAccount(record, account));
+    actions.append(login);
+    if (account) {
+      const revoke = make('button', 'button quiet delete-link', 'Remove login');
+      revoke.type = 'button';
+      revoke.addEventListener('click', () => openDelete('accounts', { id: record.id, name: `${record.name}'s login` }));
+      actions.append(revoke);
+    }
+  }
   return actions;
 }
 
@@ -192,23 +214,23 @@ function renderPages() {
     row.append(make('span', 'activity-icon', '↗'), details, make('span', '', `${workout.durationMinutes} min`));
     return row;
   });
-  find('recent-workouts').replaceChildren(...(recentNodes.length ? recentNodes : [make('p', 'empty', 'No workouts yet. Record a session to get started.')]));
+  find('recent-workouts').replaceChildren(...(recentNodes.length ? recentNodes : [make('p', 'empty', access.role === 'MEMBER' ? 'No workouts recorded yet.' : 'No workouts yet. Record a session to get started.')]));
 
   const miniGoals = challenges.slice(0, 3).map((challenge) => {
     const card = make('div', 'mini-goal');
     card.append(make('strong', '', challenge.name), make('p', '', memberName(challenge.memberId)), progressDisplay(challenge));
     return card;
   });
-  find('overview-challenges').replaceChildren(...(miniGoals.length ? miniGoals : [make('p', 'empty', 'Your next goal goes here. Add a challenge to start.')]));
+  find('overview-challenges').replaceChildren(...(miniGoals.length ? miniGoals : [make('p', 'empty', access.role === 'MEMBER' ? 'No goals assigned yet.' : 'Your next goal goes here. Add a challenge to start.')]));
 
   find('members-count').textContent = `${records.members.length} members`;
   drawTable('members-list', ['Name', 'Email', 'Age', 'Record number', 'Actions'], records.members.map((m) => [
     m.name, m.email, m.age, `#${m.id}`, actionButtons('members', m)
-  ]), 'No members yet. Use Add member to create your first member.');
+  ]), access.role === 'MEMBER' ? 'Your profile could not be found.' : 'No members yet. Use Add member to create your first member.');
   find('workouts-count').textContent = `${records.workouts.length} workouts`;
   drawTable('workouts-list', ['Activity', 'Member', 'Date', 'Minutes', 'Actions'], [...records.workouts].sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id).map((w) => [
     w.activityType, memberName(w.memberId), showDate(w.date), w.durationMinutes, actionButtons('workouts', w)
-  ]), 'No workouts yet. Add a member, then record a workout.');
+  ]), access.role === 'MEMBER' ? 'No workouts recorded yet.' : 'No workouts yet. Add a member, then record a workout.');
 
   const goalCards = records.challenges.map((challenge) => {
     const card = make('article', 'challenge-card');
@@ -218,7 +240,7 @@ function renderPages() {
       actionButtons('challenges', challenge));
     return card;
   });
-  find('challenges-list').replaceChildren(...(goalCards.length ? goalCards : [make('p', 'empty', 'No challenges yet. Add a member, then choose a goal.')]));
+  find('challenges-list').replaceChildren(...(goalCards.length ? goalCards : [make('p', 'empty', access.role === 'MEMBER' ? 'No goals assigned yet.' : 'No challenges yet. Add a member, then choose a goal.')]));
 }
 
 // 4. This creates labelled forms. Java also checks the values before saving.
@@ -252,6 +274,7 @@ function todayISO() {
 }
 
 function openForm(resource, record = null) {
+  if (access.role !== 'ADMIN') return;
   showMessage('notice', '');
   if (!recordsReady || loading) { showMessage('error', 'Wait for records to load, then try again.'); return; }
   if (resource !== 'members' && !records.members.length) {
@@ -314,7 +337,10 @@ async function saveRecord(event) {
   showMessage('form-error', '');
   try {
     const { resource, id } = editingRecord;
-    await api(id === null ? `/${resource}` : `/${resource}/${id}`, id === null ? 'POST' : 'PUT', body);
+    if (resource === 'accounts') {
+      await api(`/accounts/${id}`, 'PUT', body);
+      form.reset();
+    } else await api(id === null ? `/${resource}` : `/${resource}/${id}`, id === null ? 'POST' : 'PUT', body);
     recordDialog.close();
     showMessage('notice', id === null ? 'Record added successfully.' : 'Changes saved successfully.');
     await loadRecords();
@@ -328,8 +354,26 @@ async function saveRecord(event) {
   }
 }
 
+// This lets the admin create a login or replace a forgotten password.
+function openAccount(member, account) {
+  if (access.role !== 'ADMIN') return;
+  editingRecord = { resource: 'accounts', id: member.id };
+  find('form-title').textContent = account ? 'Reset member login' : 'Set up member login';
+  find('form-help').textContent = `Login for ${member.name}. Share these details privately. A reset ends their earlier sessions.`;
+  find('save-record').textContent = 'Save login';
+  find('form-fields').replaceChildren();
+  showMessage('form-error', '');
+  addField('username', 'Username', 'text', account?.username ?? member.email, { maxLength: 100 });
+  addField('password', 'New password', 'password', '', { maxLength: 200, help: 'Use 16 to 200 characters.' });
+  const password = find('record-form').elements.namedItem('password');
+  password.minLength = 16;
+  password.autocomplete = 'new-password';
+  recordDialog.showModal();
+}
+
 // 5. This confirms deletions. The server protects members with linked records.
 function openDelete(resource, record) {
+  if (access.role !== 'ADMIN' && resource !== 'challenges') return;
   deletingRecord = { resource, id: record.id };
   find('delete-message').textContent = `Delete “${record.name || record.activityType}”? This cannot be undone.` +
     (resource === 'members' ? ' Delete this member’s workouts and challenges first.' : '');
@@ -368,7 +412,44 @@ find('close-form').addEventListener('click', () => recordDialog.close());
 find('cancel-form').addEventListener('click', () => recordDialog.close());
 find('cancel-delete').addEventListener('click', () => deleteDialog.close());
 find('confirm-delete').addEventListener('click', deleteRecord);
+recordDialog.addEventListener('close', () => { find('record-form').reset(); });
 recordDialog.addEventListener('cancel', (event) => { if (saving) event.preventDefault(); });
 deleteDialog.addEventListener('cancel', (event) => { if (deleting) event.preventDefault(); });
-showPage();
-loadRecords();
+// This shows the controls allowed for the signed-in account.
+async function startDashboard() {
+  try {
+    const session = await api('/auth/session');
+    access = session;
+    find('logout').hidden = !session.authEnabled;
+    document.querySelectorAll('[data-add]').forEach((button) => { button.hidden = access.role !== 'ADMIN'; });
+    find('access-label').textContent = access.role === 'MEMBER' ? 'Member access · My records' : 'Admin access';
+    if (access.role === 'MEMBER') {
+      find('members-title').textContent = 'My profile';
+      document.querySelector('[data-page="members"]').lastChild.textContent = 'My profile';
+      find('member-help').textContent = 'Your personal details. Ask the admin if anything needs changing.';
+      find('workout-help').textContent = 'Your completed workouts, recorded by the admin.';
+      find('challenge-help').textContent = 'Your goals, added by the admin. You can delete a goal you no longer want.';
+      find('member-directory-title').textContent = 'My details';
+    }
+    showPage();
+    await loadRecords();
+  } catch (error) {
+    showMessage('error', error.message);
+  }
+}
+
+// This ends the saved session before returning to the sign-in page.
+find('logout').addEventListener('click', async () => {
+  find('logout').disabled = true;
+  try {
+    await api('/auth/logout', 'POST');
+    location.replace('/login');
+  } catch (error) {
+    showMessage('error', error.message);
+    find('logout').disabled = false;
+  }
+});
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) location.reload();
+});
+startDashboard();

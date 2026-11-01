@@ -18,6 +18,8 @@ public final class FitnessHttpServer implements AutoCloseable {
   private final HttpServer server;
   private final ExecutorService executor = Executors.newFixedThreadPool(4);
   private final FitnessService service;
+  private final LoginSessions sessions;
+  private final Repository<MemberAccount> accounts;
   private final Gson gson = new GsonBuilder().setStrictness(Strictness.STRICT).create();
 
   /**
@@ -39,30 +41,47 @@ public final class FitnessHttpServer implements AutoCloseable {
    * @throws IOException if the port cannot be opened
    */
   public FitnessHttpServer(FitnessService service, ServerSettings settings) throws IOException {
+    this(service, settings, new MemorySessionRepository());
+  }
+
+  /**
+   * Creates a server with shared session storage for hosted sign-in and logout.
+   *
+   * @param service application rules and records
+   * @param settings server address and admin credentials
+   * @param sessionStorage memory or database storage for signed-in sessions
+   * @throws IOException if the port cannot be opened
+   */
+  public FitnessHttpServer(
+      FitnessService service, ServerSettings settings, SessionRepository sessionStorage)
+      throws IOException {
+    this(service, settings, sessionStorage, new InMemoryRepository<>());
+  }
+
+  /**
+   * Creates a server with member accounts and shared session storage.
+   *
+   * @param service application records and rules
+   * @param settings server address and admin credentials
+   * @param sessionStorage saved sign-in sessions
+   * @param accounts saved member accounts
+   * @throws IOException if the port cannot be opened
+   */
+  public FitnessHttpServer(
+      FitnessService service,
+      ServerSettings settings,
+      SessionRepository sessionStorage,
+      Repository<MemberAccount> accounts)
+      throws IOException {
     this.service = Objects.requireNonNull(service);
+    this.accounts = Objects.requireNonNull(accounts);
+    sessions = new LoginSessions(settings, sessionStorage, accounts);
     server = HttpServer.create(new InetSocketAddress(settings.getHost(), settings.getPort()), 0);
-    var pagesAndApi = server.createContext("/", this::handle);
-    if (settings.hasSignIn()) {
-      // The browser shows its standard username and password box.
-      pagesAndApi.setAuthenticator(
-          new BasicAuthenticator("FitTrack", StandardCharsets.UTF_8) {
-            @Override
-            public boolean checkCredentials(String username, String password) {
-              boolean userMatches = sameText(username, settings.username());
-              boolean passwordMatches = sameText(password, settings.password());
-              return userMatches & passwordMatches;
-            }
-          });
-    }
+    server.createContext("/", this::handle);
     // Hosting health checks can read this small status response without a password.
     // No member, workout or challenge data is available here.
     server.createContext("/health", this::health);
     server.setExecutor(executor);
-  }
-
-  private static boolean sameText(String supplied, String expected) {
-    return java.security.MessageDigest.isEqual(
-        supplied.getBytes(StandardCharsets.UTF_8), expected.getBytes(StandardCharsets.UTF_8));
   }
 
   private void health(HttpExchange request) throws IOException {
@@ -104,8 +123,17 @@ public final class FitnessHttpServer implements AutoCloseable {
 
   private void handle(HttpExchange x) throws IOException {
     try {
+      // Private pages and record responses are not saved in the browser cache.
+      x.getResponseHeaders().set("Cache-Control", "no-store");
+      x.getResponseHeaders().set("Pragma", "no-cache");
       String path = x.getRequestURI().getPath();
+      if (authentication(x, path)) return;
       if (DashboardPages.serve(x)) return;
+      int viewer = sessions.enabled() ? sessions.memberId(x) : 0;
+      if (path.startsWith("/accounts")) {
+        accountRequest(x, path, viewer);
+        return;
+      }
       if (path.equals("/api")) {
         if (!x.getRequestMethod().equals("GET")) {
           methodNotAllowed(x, "GET");
@@ -144,17 +172,29 @@ public final class FitnessHttpServer implements AutoCloseable {
         methodNotAllowed(x, allowed);
         return;
       }
+      // A member can only read their own records and delete their own challenges.
+      if (viewer != 0) {
+        if (!method.equals("GET")
+            && !(method.equals("DELETE") && resource.equals("challenges") && id != null)) {
+          reply(x, 403, Map.of("error", "Only the admin can change these records"));
+          return;
+        }
+      }
       if (summary) {
+        if (viewer != 0 && id != viewer) throw new NoSuchElementException("Member not found");
         reply(x, 200, service.summary(id));
         return;
       }
       if (progress) {
-        reply(x, 200, service.progress(id));
+        Challenge challenge = service.challenge(id);
+        if (viewer != 0 && challenge.getMemberId() != viewer)
+          throw new NoSuchElementException("Challenge not found");
+        reply(x, 200, challenge.progress(service.workouts()));
         return;
       }
       // This sends requests to the service methods that read, add, change or delete records.
       switch (method) {
-        case "GET" -> reply(x, 200, read(resource, id));
+        case "GET" -> reply(x, 200, read(resource, id, viewer));
         case "POST", "PUT" -> {
           // This checks the JSON request type, size and record ID before changing data.
           String contentType = x.getRequestHeaders().getFirst("Content-Type");
@@ -183,16 +223,22 @@ public final class FitnessHttpServer implements AutoCloseable {
         }
         case "DELETE" -> {
           switch (resource) {
-            case "members" -> service.deleteMember(id);
+            case "members" -> {
+              service.deleteMember(id);
+              accounts.delete(id);
+            }
             case "workouts" -> service.deleteWorkout(id);
-            case "challenges" -> service.deleteChallenge(id);
+            case "challenges" -> {
+              if (viewer == 0) service.deleteChallenge(id);
+              else service.deleteOwnChallenge(id, viewer);
+            }
             default -> throw new IllegalStateException();
           }
           x.sendResponseHeaders(204, -1);
         }
         default -> throw new IllegalStateException();
       }
-    // This sends a clear response for each error and records unexpected errors in the server log.
+      // This sends a clear response for each error and records unexpected errors in the server log.
     } catch (ConflictException e) {
       reply(x, 409, Map.of("error", e.getMessage()));
     } catch (NoSuchElementException e) {
@@ -207,6 +253,180 @@ public final class FitnessHttpServer implements AutoCloseable {
           x.getRequestMethod() + " " + x.getRequestURI().getPath() + " -> " + x.getResponseCode());
       x.close();
     }
+  }
+
+  private boolean authentication(HttpExchange request, String path) throws IOException {
+    if (path.equals("/auth/session")) {
+      if (!request.getRequestMethod().equals("GET")) methodNotAllowed(request, "GET");
+      else {
+        boolean signedIn = sessions.signedIn(request);
+        reply(
+            request,
+            signedIn ? 200 : 401,
+            Map.of(
+                "authEnabled",
+                sessions.enabled(),
+                "authenticated",
+                signedIn,
+                "role",
+                signedIn ? (sessions.memberId(request) == 0 ? "ADMIN" : "MEMBER") : "NONE",
+                "memberId",
+                signedIn ? sessions.memberId(request) : 0));
+      }
+      return true;
+    }
+    if (path.equals("/auth/login") || path.equals("/auth/logout")) {
+      if (!request.getRequestMethod().equals("POST")) methodNotAllowed(request, "POST");
+      else if (!safeWrite(request)) reply(request, 403, Map.of("error", "Request blocked"));
+      else if (path.equals("/auth/logout")) {
+        sessions.end(request);
+        request.sendResponseHeaders(204, -1);
+      } else login(request);
+      return true;
+    }
+
+    // The login page needs its own script, styles and icon before the visitor signs in.
+    if (Set.of("/login.js", "/styles.css", "/favicon.svg", "/favicon.ico").contains(path))
+      return false;
+    if (path.equals("/login") || path.equals("/login.html")) {
+      if (sessions.signedIn(request)) redirect(request, "/");
+      else DashboardPages.serve(request);
+      return true;
+    }
+    boolean signedIn = sessions.signedIn(request);
+    if (signedIn && sessions.enabled() && sessions.memberId(request) != 0) {
+      try {
+        service.member(sessions.memberId(request));
+      } catch (NoSuchElementException error) {
+        signedIn = false;
+      }
+    }
+    if (!signedIn) {
+      if ((path.equals("/") || path.equals("/index.html"))
+          && Set.of("GET", "HEAD").contains(request.getRequestMethod()))
+        redirect(request, "/login");
+      else reply(request, 401, Map.of("error", "Please sign in to continue"));
+      return true;
+    }
+    if (sessions.enabled()
+        && !Set.of("GET", "HEAD").contains(request.getRequestMethod())
+        && !safeWrite(request)) {
+      reply(request, 403, Map.of("error", "Request blocked"));
+      return true;
+    }
+    return false;
+  }
+
+  private void login(HttpExchange request) throws IOException {
+    if (!sessions.enabled()) {
+      reply(request, 200, Map.of("authenticated", true, "authEnabled", false));
+      return;
+    }
+    if (!sessions.allowAttempt(request)) {
+      request.getResponseHeaders().set("Retry-After", "300");
+      reply(request, 429, Map.of("error", "Too many sign-in attempts. Try again in five minutes."));
+      return;
+    }
+    String type = request.getRequestHeaders().getFirst("Content-Type");
+    if (type == null || !type.split(";", 2)[0].strip().equalsIgnoreCase("application/json")) {
+      reply(request, 415, Map.of("error", "Content-Type must be application/json"));
+      return;
+    }
+    byte[] bytes = request.getRequestBody().readNBytes(4097);
+    if (bytes.length > 4096) {
+      reply(request, 413, Map.of("error", "Sign-in request is too large"));
+      return;
+    }
+    JsonElement parsed =
+        gson.fromJson(new String(bytes, StandardCharsets.UTF_8), JsonElement.class);
+    if (parsed == null || !parsed.isJsonObject())
+      throw new IllegalArgumentException("Body must be a JSON object");
+    JsonObject body = parsed.getAsJsonObject();
+    Integer memberId = sessions.authenticate(string(body, "username"), string(body, "password"));
+    if (memberId != null && memberId != 0) {
+      try {
+        service.member(memberId);
+      } catch (NoSuchElementException error) {
+        memberId = null;
+      }
+    }
+    if (memberId == null) {
+      sessions.failedAttempt(request);
+      reply(request, 401, Map.of("error", "Username or password is incorrect"));
+      return;
+    }
+    sessions.start(request, memberId);
+    reply(request, 200, Map.of("authenticated", true, "authEnabled", true));
+  }
+
+  private void accountRequest(HttpExchange x, String path, int viewer) throws IOException {
+    if (viewer != 0 || !sessions.enabled()) {
+      reply(x, 403, Map.of("error", "Only a signed-in admin can manage accounts"));
+      return;
+    }
+    String method = x.getRequestMethod();
+    if (path.equals("/accounts") && method.equals("GET")) {
+      // Password hashes never appear in an API response.
+      reply(
+          x,
+          200,
+          accounts.findAll().stream()
+              .map(a -> Map.of("memberId", a.memberId(), "username", a.username()))
+              .toList());
+      return;
+    }
+    String[] parts = path.split("/", -1);
+    if (parts.length != 3 || !parts[1].equals("accounts")) {
+      reply(x, 404, Map.of("error", "Route not found"));
+      return;
+    }
+    int id = positiveId(parts[2]);
+    service.member(id);
+    if (method.equals("DELETE")) {
+      if (!accounts.delete(id)) throw new NoSuchElementException("Account not found");
+      x.sendResponseHeaders(204, -1);
+      return;
+    }
+    if (!method.equals("PUT")) {
+      methodNotAllowed(x, "PUT, DELETE");
+      return;
+    }
+    String type = x.getRequestHeaders().getFirst("Content-Type");
+    if (type == null || !type.split(";", 2)[0].strip().equalsIgnoreCase("application/json")) {
+      reply(x, 415, Map.of("error", "Content-Type must be application/json"));
+      return;
+    }
+    byte[] bytes = x.getRequestBody().readNBytes(4097);
+    if (bytes.length > 4096) {
+      reply(x, 413, Map.of("error", "Account request is too large"));
+      return;
+    }
+    JsonElement parsed =
+        gson.fromJson(new String(bytes, StandardCharsets.UTF_8), JsonElement.class);
+    if (parsed == null || !parsed.isJsonObject())
+      throw new IllegalArgumentException("Body must be a JSON object");
+    JsonObject body = parsed.getAsJsonObject();
+    String username = string(body, "username");
+    if (sessions.reservedUsername(username))
+      throw new ConflictException("That username is reserved for the admin");
+    if (accounts.findAll().stream()
+        .anyMatch(a -> a.memberId() != id && a.username().equalsIgnoreCase(username)))
+      throw new ConflictException("Username already exists");
+    var account = new MemberAccount(id, username, Passwords.hash(string(body, "password")));
+    if (accounts.findById(id).isPresent()) accounts.update(account);
+    else accounts.create(account);
+    reply(x, 200, Map.of("memberId", id, "username", account.username()));
+  }
+
+  private boolean safeWrite(HttpExchange request) {
+    // Other websites cannot add this header without a successful cross-origin permission check.
+    return "true".equals(request.getRequestHeaders().getFirst("X-FitTrack-Request"))
+        && !"cross-site".equals(request.getRequestHeaders().getFirst("Sec-Fetch-Site"));
+  }
+
+  private void redirect(HttpExchange request, String location) throws IOException {
+    request.getResponseHeaders().set("Location", location);
+    request.sendResponseHeaders(303, -1);
   }
 
   private void methodNotAllowed(HttpExchange x, String allowed) throws IOException {
@@ -241,16 +461,46 @@ public final class FitnessHttpServer implements AutoCloseable {
     return e.getAsString();
   }
 
-  private Object read(String resource, Integer id) {
+  private Object read(String resource, Integer id, int viewer) {
+    if (id == null) {
+      return switch (resource) {
+        case "members" ->
+            service.members().stream().filter(m -> viewer == 0 || m.getId() == viewer).toList();
+        case "workouts" ->
+            service.workouts().stream()
+                .filter(w -> viewer == 0 || w.getMemberId() == viewer)
+                .toList();
+        case "challenges" ->
+            service.challenges().stream()
+                .filter(c -> viewer == 0 || c.getMemberId() == viewer)
+                .map(this::challengeView)
+                .toList();
+        default -> throw new IllegalStateException();
+      };
+    }
+    // The checked object is also the returned object, even if another request updates the database.
     return switch (resource) {
-      case "members" -> id == null ? service.members() : service.member(id);
-      case "workouts" -> id == null ? service.workouts() : service.workout(id);
-      case "challenges" ->
-          id == null
-              ? service.challenges().stream().map(this::challengeView).toList()
-              : challengeView(service.challenge(id));
+      case "members" -> {
+        Member member = service.member(id);
+        requireOwner(viewer, member.getId());
+        yield member;
+      }
+      case "workouts" -> {
+        Workout workout = service.workout(id);
+        requireOwner(viewer, workout.getMemberId());
+        yield workout;
+      }
+      case "challenges" -> {
+        Challenge challenge = service.challenge(id);
+        requireOwner(viewer, challenge.getMemberId());
+        yield challengeView(challenge);
+      }
       default -> throw new IllegalStateException();
     };
+  }
+
+  private void requireOwner(int viewer, int owner) {
+    if (viewer != 0 && viewer != owner) throw new NoSuchElementException("Record not found");
   }
 
   private Map<String, Object> challengeView(Challenge c) {

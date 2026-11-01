@@ -67,6 +67,31 @@ class JdbcRepositoryTest {
   }
 
   @Test
+  void ownedDeletionChecksTheSavedOwnerAndRollsBackFailedChecks() {
+    var members = JdbcRepository.members(cf);
+    members.create(new Member(1, "First", "first@example.com", 25));
+    members.create(new Member(2, "Second", "second@example.com", 25));
+    var challenges = JdbcRepository.challenges(cf);
+    challenges.create(new MinutesChallenge(1, 1, "Goal", 60, "2026-01-01", "2026-01-31"));
+    assertFalse(challenges.deleteMatching(1, c -> c.getMemberId() == 2));
+    assertTrue(challenges.findById(1).isPresent());
+    assertThrows(
+        IllegalStateException.class,
+        () ->
+            challenges.deleteMatching(
+                1,
+                c -> {
+                  throw new IllegalStateException("Check failed");
+                }));
+    assertTrue(challenges.findById(1).isPresent());
+    challenges.update(
+        new MinutesChallenge(1, 2, "Reassigned goal", 60, "2026-01-01", "2026-01-31"));
+    assertFalse(challenges.deleteMatching(1, c -> c.getMemberId() == 1));
+    assertTrue(challenges.deleteMatching(1, c -> c.getMemberId() == 2));
+    assertFalse(challenges.deleteMatching(1, c -> true));
+  }
+
+  @Test
   void connectionFailureIsWrapped() {
     var r =
         JdbcRepository.members(

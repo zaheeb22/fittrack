@@ -4,7 +4,9 @@ import com.fittrack.model.*;
 import com.fittrack.repository.*;
 import java.util.*;
 
-/** Checks the rules for members, workouts and challenges, separately from web requests and storage. */
+/**
+ * Checks the rules for members, workouts and challenges, separately from web requests and storage.
+ */
 public final class FitnessService {
   private final Repository<Member> members;
   private final Repository<Workout> workouts;
@@ -186,6 +188,18 @@ public final class FitnessService {
    */
   public synchronized void deleteChallenge(int id) {
     if (!challenges.delete(id)) throw new NoSuchElementException("Challenge not found");
+  }
+
+  /**
+   * Deletes a challenge only when it still belongs to this member.
+   *
+   * @param id challenge ID
+   * @param memberId signed-in member's ID
+   * @throws NoSuchElementException if no matching challenge exists
+   */
+  public synchronized void deleteOwnChallenge(int id, int memberId) {
+    if (!challenges.deleteMatching(id, c -> c.getMemberId() == memberId))
+      throw new NoSuchElementException("Challenge not found");
   }
 
   /**

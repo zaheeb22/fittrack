@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Verify HTTP CRUD against an already running FitTrack server; remove demo records."""
-import base64
+import http.cookiejar
 import json
 import os
 import urllib.error
@@ -9,7 +9,8 @@ import urllib.parse
 
 BASE = os.environ.get('FITTRACK_API_URL', 'http://127.0.0.1:8080').rstrip('/')
 ID = 900001
-HEADERS = {'Content-Type': 'application/json'}
+HEADERS = {'Content-Type': 'application/json', 'X-FitTrack-Request': 'true'}
+opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
 username = os.environ.get('FITTRACK_ADMIN_USER', '')
 password = os.environ.get('FITTRACK_ADMIN_PASSWORD', '')
 if username or password:
@@ -18,8 +19,13 @@ if username or password:
     address = urllib.parse.urlparse(BASE)
     if address.scheme != 'https' and address.hostname not in ('localhost', '127.0.0.1', '::1'):
         raise ValueError('Use HTTPS before sending sign-in details to an online server.')
-    token = base64.b64encode((username + ':' + password).encode()).decode()
-    HEADERS['Authorization'] = 'Basic ' + token
+    # This signs in once. The cookie jar sends the session cookie with later requests.
+    login = urllib.request.Request(BASE + '/auth/login',
+        data=json.dumps({'username': username, 'password': password}).encode(),
+        headers=HEADERS, method='POST')
+    with opener.open(login, timeout=15) as response:
+        if response.status != 200:
+            raise RuntimeError('FitTrack sign-in failed.')
 
 
 def request(method, path, expected, body=None):
@@ -27,7 +33,7 @@ def request(method, path, expected, body=None):
     req = urllib.request.Request(BASE + path, data=data, method=method,
                                  headers=HEADERS)
     try:
-        response = urllib.request.urlopen(req, timeout=10)
+        response = opener.open(req, timeout=15)
     except urllib.error.HTTPError as error:
         response = error
     with response:
@@ -71,3 +77,6 @@ finally:
         request('DELETE', f'/{resource}/{ID}', 204)
         request('GET', f'/{resource}/{ID}', 404)
 print('HTTP CRUD and progress verification passed; demo records removed.')
+
+if username and password:
+    request('POST', '/auth/logout', 204)
