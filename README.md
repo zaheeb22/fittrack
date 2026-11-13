@@ -2,7 +2,7 @@
 
 FitTrack is a Java fitness challenge tracker that stores members, workouts and goals. Goals can count exercise minutes or completed workout sessions. The webpage shows totals and goal progress, and provides forms to add, view, edit and delete records.
 
-The repository includes Eclipse project settings and a Maven build. Java handles the business rules, database access and web requests. HTML, CSS and JavaScript provide the webpage.
+The project is configured for development in Eclipse IDE using Java 25 and Maven. The repository includes shared Eclipse settings and launch configurations. Java handles the business rules, database access and web requests. HTML, CSS and JavaScript provide the webpage.
 
 ## Contents
 
@@ -128,14 +128,31 @@ The Eclipse Console should finish with `BUILD SUCCESS`.
 
 ### Run inside Eclipse
 
-1. Open **Run → Run Configurations → Java Application** and create a configuration.
-2. Choose the `fittrack` project and main class `com.fittrack.app.FitTrackApp`.
-3. Under **Arguments**, set Program arguments to `--memory` for a temporary demonstration, or `--mysql` for database storage.
-4. Under **Environment**, add the database variables from section 9 when using `--mysql`.
-5. Set `FITTRACK_PORT` to `8081` if port 8080 is already in use.
-6. Click **Run**, then open the address printed in the Console.
+The `eclipse/` folder contains two shared launch configurations:
 
-The Eclipse red Stop button stops the Java app. Eclipse does not automatically load a project `.env` file; its Run Configuration needs the variables explicitly.
+| Configuration | Use |
+| --- | --- |
+| `FitTrack Memory.launch` | Temporary local records without a database |
+| `FitTrack MySQL.launch` | Records stored in the configured MySQL database |
+
+1. Refresh the imported project with **File → Refresh** or F5.
+2. Expand `eclipse/`, right-click **FitTrack Memory.launch** and choose **Run As → FitTrack Memory**. If this option is not shown, open **Run → Run Configurations → Java Application** and select **FitTrack Memory**.
+3. Open `http://127.0.0.1:8081` after the Eclipse Console reports that the server is listening.
+4. Stop the running app with the red **Terminate** button before starting another configuration on the same port.
+
+For database mode, first copy **FitTrack MySQL** with the **Duplicate** button in Run Configurations. Give the copy a local name such as **FitTrack MySQL Local**. In its **Common** tab, select **Save as → Local file** so private settings remain in your workspace rather than the shared `.launch` file. In its **Environment** tab, add `FITTRACK_DB_URL`, `FITTRACK_DB_USER` and `FITTRACK_DB_PASSWORD` using section 9. Add `FITTRACK_ADMIN_USER` and `FITTRACK_ADMIN_PASSWORD` to test administrator and member sign-in. Apply the settings and run the local copy.
+
+Both shared configurations use `127.0.0.1:8081` for the local web server. The MySQL server's host and port belong in `FITTRACK_DB_URL`. Eclipse does not automatically read `.env`. Keep passwords in the local configuration and check that they are not visible when taking screenshots.
+
+### Test and demonstrate in Eclipse
+
+1. Right-click `src/test/java` and select **Run As → JUnit Test**.
+2. Open the **JUnit** view and inspect the failures and errors, rather than relying only on a test count.
+3. Run the Maven goals above inside Eclipse and inspect the Console for `BUILD SUCCESS`.
+4. Open the generated `target/reports/apidocs/index.html` to review Javadoc.
+5. Capture the Eclipse Project Explorer, relevant source classes, successful Maven Console and passing JUnit view for the assessment evidence.
+
+The configuration files support an Eclipse workflow. Screenshots of your actual build, tests and explanation in Eclipse provide evidence of using that workflow.
 
 ## 4. Build and try the app without MySQL
 
