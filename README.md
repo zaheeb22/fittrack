@@ -10,7 +10,7 @@ The repository includes Eclipse project settings and a Maven build. Java handles
 2. [Tools and terminal basics](#2-tools-and-terminal-basics)
 3. [Open the project in Eclipse](#3-open-the-project-in-eclipse)
 4. [Build and try the app without MySQL](#4-build-and-try-the-app-without-mysql)
-5. [Connect to the online Aiven database](#5-connect-to-the-online-aiven-database)
+5. [Connect to the online Filess.io database](#5-connect-to-the-online-filessio-database)
 6. [Create the tables and add sample records](#6-create-the-tables-and-add-sample-records)
 7. [View the database records](#7-view-the-database-records)
 8. [Optional: install a local MySQL server](#8-optional-install-a-local-mysql-server)
@@ -28,11 +28,11 @@ The repository includes Eclipse project settings and a Maven build. Java handles
 The current online setup is:
 
 ```text
-Browser → Vercel → Java application → JDBC → Aiven MySQL
+Browser → Vercel → Java application → JDBC → Filess.io MySQL
 ```
 
 - **Vercel** runs the Java application and serves its webpage.
-- **Aiven** hosts the MySQL database, where records stay saved.
+- **Filess.io** hosts the MySQL database, where records stay saved.
 - **JDBC** lets Java send SQL commands to MySQL.
 - **GitHub** stores the source code. It does not store the live database records.
 - **Eclipse** opens, edits, builds and tests the Java project.
@@ -169,79 +169,69 @@ java -jar target/fittrack-0.0.1-SNAPSHOT.jar --memory
 
 That command uses port 8080 unless an environment variable changes it.
 
-## 5. Connect to the online Aiven database
+## 5. Connect to the online Filess.io database
 
-Aiven already runs the server. A client on your computer connects to it. Installing Workbench or MySQL Shell does not create another online database.
+Filess.io hosts the MySQL server. A client on your computer connects to it; installing MySQL Shell or Workbench does not create another online database.
 
-For a new Aiven setup, create a MySQL service, choose the intended service plan and wait until it says Running. Account trial credits and a service's plan are separate: check the service's selected price rather than assuming that a trial banner means it is free.
+The current database uses **MySQL 5.7.38**. In **Filess.io → Shared → your database → Overview**, the connection details are:
 
-In **Aiven → MySQL service → Overview → Connection information**, find:
+| Detail | Current project value |
+| --- | --- |
+| Host | `684dco.h.filess.io` |
+| Port | `3306` |
+| Database | `fittrack_playpullno` |
+| User | `fittrack_playpullno` |
+| Password | Copy privately from the Filess.io panel |
 
-| Detail         | Current project value                             |
-| -------------- | ------------------------------------------------- |
-| Host           | `mysql-38f18d54-fittrackerapp.h.aivencloud.com` |
-| Port           | `19406`                                         |
-| Database       | `defaultdb`                                     |
-| User           | `avnadmin`                                      |
-| Password       | Copied privately from Aiven                       |
-| CA certificate | Downloaded from Aiven, saved as`ca.pem`         |
+A recreated database can have different details. Keep passwords out of the source files and GitHub. The database password is separate from the FitTrack administrator password.
 
-A recreated service can have different details. The host and username are not passwords, but passwords and full connection URLs containing passwords must stay out of GitHub.
+### View tables in the browser
+
+Choose **Web Client** in the Filess.io panel. Open the database connection, then refresh its table list. A new SQL editor can run the commands in sections 6 and 7. The panel also has a database terminal: press Enter inside it to connect.
 
 ### Connect using MySQL Shell
 
-With a separately installed [MySQL Shell](https://dev.mysql.com/downloads/shell/), use this **Terminal** command. Replace the certificate path with its location on your computer:
+Install [MySQL Shell](https://dev.mysql.com/downloads/shell/) separately if `mysqlsh` is unavailable. In Terminal:
 
 ```sh
 mysqlsh --sql \
-  --host=mysql-38f18d54-fittrackerapp.h.aivencloud.com \
-  --port=19406 \
-  --user=avnadmin \
+  --host=684dco.h.filess.io \
+  --port=3306 \
+  --user=fittrack_playpullno \
   --password \
-  --ssl-mode=VERIFY_CA \
-  --ssl-ca="$HOME/Downloads/ca.pem" \
-  --database=defaultdb
+  --ssl-mode=REQUIRED \
+  --database=fittrack_playpullno
 ```
 
-`--password` asks for the password privately instead of placing it in the command. Typed characters may remain invisible. `VERIFY_CA` checks the server certificate using Aiven's downloaded CA certificate. [Aiven&#39;s command-line guide](https://aiven.io/docs/products/mysql/howto/connect-from-cli) explains connecting with MySQL clients.
+`--password` asks for the password privately. Typed characters may remain invisible. This example requires an encrypted connection. It does not use a certificate downloaded from the previous provider. If the server rejects TLS, check the current provider settings before changing the connection's security requirements.
 
-On this Mac, the installed Workbench also includes a working MySQL Shell at this path:
-
-```sh
-"/Applications/MySQL Workbench.app/Contents/Resources/app/shell/bin/mysqlsh" --sql \
-  --host=mysql-38f18d54-fittrackerapp.h.aivencloud.com \
-  --port=19406 \
-  --user=avnadmin \
-  --password \
-  --ssl-mode=VERIFY_CA \
-  --ssl-ca="$HOME/Downloads/ca.pem" \
-  --database=defaultdb
-```
-
-That bundled path depends on the Workbench installation; it is not guaranteed on another computer. In the connected **SQL session**, this checks the connection:
+In the connected SQL session:
 
 ```sql
 SELECT DATABASE(), VERSION();
+SHOW SESSION STATUS LIKE 'Ssl_cipher';
 ```
 
-The database name should be `defaultdb`. Keep this session open for the next section. `\quit` closes MySQL Shell.
+The database name should be `fittrack_playpullno`. A non-empty `Ssl_cipher` value indicates that this connection uses TLS. `\quit` closes MySQL Shell.
 
 ### Connect using Workbench
 
-Create a connection using the same host, port, username and `defaultdb`. In its SSL settings choose **Require and Verify CA** and select `ca.pem` as the CA file. Enter the password privately. [Aiven&#39;s Workbench guide](https://aiven.io/docs/products/mysql/howto/connect-from-mysql-workbench) describes these settings.
+Create a connection using the host, port, username and database above. Choose **Require** in the SSL settings and enter the password privately. A CA file is only needed when configuring certificate verification with a certificate supplied by the current provider. Do not assume a bundled MySQL Shell path exists inside Workbench; install Shell separately when needed.
 
-If Workbench stays on a spinner, the command-line client provides another way to connect. The Workbench installation on this Mac previously reported internal errors while starting its editor; the bundled MySQL Shell connected successfully.
+### MySQL 5.7 behaviour
+
+MySQL 5.7 ignores `CHECK` constraints. FitTrack still validates positive values, goal types and date rules in Java. Primary keys, unique keys and foreign keys remain relevant database checks. A direct SQL edit can bypass Java validation, so the database should not be described as enforcing the ignored `CHECK` rules. A local MySQL 8.4 installation behaves differently in this respect.
 
 ## 6. Create the tables and add sample records
 
 A database is the container; its tables hold the records. The application expects the tables to exist before it starts in MySQL mode.
 
-### Aiven: create tables inside defaultdb
+### Filess.io: create tables inside fittrack_playpullno
 
 In the connected **MySQL Shell SQL session**:
 
 ```sql
-USE defaultdb;
+USE fittrack_playpullno;
 ```
 
 Then load the table definitions. This is a **MySQL Shell command**, using the current project's full path:
@@ -268,13 +258,13 @@ In the same **MySQL Shell SQL session**:
 \source /Users/YOUR_MAC_USERNAME/eclipse-workspace/fittrack/database/sample-data.sql
 ```
 
-This script selects **defaultdb** and adds four fictional members, eight workouts and four challenges. It keeps existing records, including Alex. Repeating it skips sample IDs already present. If a sample member's ID or email conflicts, that member is skipped; dependent samples require the expected matching ID and email.
+This script uses the currently selected database and adds four fictional members, eight workouts and four challenges. It keeps existing records. Repeating it skips sample IDs already present. If a sample member's ID or email conflicts, that member is skipped; dependent samples require the expected matching ID and email.
 
 The SQL file contains setup commands. After it runs, the records live in **MySQL**, and the app reads them from there. A GitHub push alone does not execute SQL or change the database. Refresh the webpage to load newly inserted records.
 
 ### Workbench alternative
 
-Open `database/schema.sql` with **File → Open SQL Script**, select `defaultdb` as the default schema, and execute the whole script. Then open and execute `database/sample-data.sql` if sample records are wanted. These are SQL scripts, not CSV files.
+Open `database/schema.sql` with **File → Open SQL Script**, select `fittrack_playpullno` as the default schema, and execute the whole script. Then open and execute `database/sample-data.sql` if sample records are wanted. These are SQL scripts, not CSV files.
 
 ## 7. View the database records
 
@@ -282,7 +272,7 @@ These commands belong in a connected **SQL session**:
 
 ```sql
 SHOW DATABASES;
-USE defaultdb;
+USE fittrack_playpullno;
 SHOW TABLES;
 DESCRIBE members;
 SELECT * FROM members ORDER BY id LIMIT 100;
@@ -290,7 +280,7 @@ SELECT * FROM workouts ORDER BY id LIMIT 100;
 SELECT * FROM challenges ORDER BY id LIMIT 100;
 ```
 
-`DESCRIBE` shows column names and types. `SELECT` displays records. `Empty set` means the query found no matching rows; it does not mean the table is missing. For local setup, use `USE fittrack;` instead of `USE defaultdb;`.
+`DESCRIBE` shows column names and types. `SELECT` displays records. `Empty set` means the query found no matching rows; it does not mean the table is missing. For local setup, use `USE fittrack;` instead of `USE fittrack_playpullno;`.
 
 To see each workout alongside its member name:
 
@@ -313,7 +303,7 @@ For a simple database check, add or edit a member in the webpage and run the mat
 
 ## 8. Optional: install a local MySQL server
 
-**Skip this section when using Aiven only.** It is an alternative for running the whole project on one computer. A local database is separate from Aiven; changes to one do not appear in the other.
+**Skip this section when using Filess.io only.** It is an alternative for running the whole project on one computer. A local database is separate from Filess.io; changes to one do not appear in the other.
 
 The following first-install route uses **Homebrew on macOS**. It installs MySQL 8.4, which supports this project's constraints. If MySQL is already installed using Oracle's installer, use that installation's instructions rather than starting a second server on the same port.
 
@@ -356,7 +346,7 @@ USE fittrack;
 SHOW TABLES;
 ```
 
-The Aiven sample script selects `defaultdb`, so it should not be used unchanged for this local database. The local `fittrack.sql` already includes its own sample records.
+The sample script uses the database selected by the client. The local `fittrack.sql` already includes its own sample records; there is no need to import the larger sample set unless it is wanted.
 
 ### Create a separate application account
 
@@ -393,12 +383,12 @@ Stop an existing Java instance with Ctrl+C before starting another on the same p
 
 Choose **one** of the following configurations in **Terminal**, not at a SQL prompt.
 
-### Use Aiven from the local Java app
+### Use Filess.io from the local Java app
 
 ```sh
-export FITTRACK_DB_URL='jdbc:mysql://mysql-38f18d54-fittrackerapp.h.aivencloud.com:19406/defaultdb?sslMode=REQUIRED'
-export FITTRACK_DB_USER='avnadmin'
-read -s 'FITTRACK_DB_PASSWORD?Aiven database password: '
+export FITTRACK_DB_URL='jdbc:mysql://684dco.h.filess.io:3306/fittrack_playpullno?sslMode=REQUIRED'
+export FITTRACK_DB_USER='fittrack_playpullno'
+read -s 'FITTRACK_DB_PASSWORD?Filess.io database password: '
 printf '\n'
 export FITTRACK_DB_PASSWORD
 export FITTRACK_BIND_HOST='127.0.0.1'
@@ -406,7 +396,7 @@ export FITTRACK_PORT='8081'
 ./scripts/run --mysql
 ```
 
-`read -s` is zsh syntax and hides password entry. `sslMode=REQUIRED` requires an encrypted JDBC connection; it does not perform the CA verification used by the client commands above. Stricter JDBC certificate checking needs the appropriate Java trust-store configuration.
+`read -s` is zsh syntax and hides password entry. `sslMode=REQUIRED` requires an encrypted JDBC connection. It does not verify the server identity. Stronger verification needs the current provider’s certificate and suitable Java trust-store settings.
 
 ### Use the optional local database
 
@@ -580,7 +570,7 @@ In **Terminal**:
 
 The JUnit tests cover calculations, challenge types, service rules, JDBC storage, HTTP handling, login, logout, session expiry, shared database sessions, member permissions and account resets. Test results are generated in `target/surefire-reports/`.
 
-Database tests use **H2 in MySQL compatibility mode**. They check JDBC operations but do not replace checking the actual MySQL server. The user has connected Aiven and displayed saved records in the hosted webpage; a full recorded MySQL CRUD and restart check is still part of the assessment evidence.
+Database tests use **H2 in MySQL compatibility mode**. They check JDBC operations but do not replace checking the actual MySQL server. The Filess.io database contains imported sample records. A full recorded check of hosted MySQL CRUD, login and persistence after restart is still needed.
 
 In Eclipse, select `src/test/java` → **Run As → JUnit Test**. Passing tests appear in the JUnit view. Generate the final report's test evidence from your own current run.
 
@@ -632,13 +622,13 @@ The test checks that signing in clears the password form, the logout button appe
 
 ### Verify records survive a restart
 
-In MySQL mode, add a separate test member through the webpage. Find it with `SELECT` in MySQL, stop and restart the local Java application with the same database settings, then check it is still present. Edit and delete it through the webpage and confirm each change with SQL. For the hosted app, redeploying the application should also preserve records in the external Aiven database.
+In MySQL mode, add a separate test member through the webpage. Find it with `SELECT` in MySQL, stop and restart the local Java application with the same database settings, then check it is still present. Edit and delete it through the webpage and confirm each change with SQL. For the hosted app, redeploying the application should also preserve records in the external Filess.io database.
 
 ### Optional webpage action checks
 
 `scripts/test-dashboard.cjs` uses Node.js and jsdom to check forms, navigation and messages. It is extra development tooling, not a dependency of the app. It checks webpage behavior rather than visual appearance.
 
-These checks require a **separate empty memory-mode server**; they remove records they create and must not be pointed at the shared Aiven database. With Node.js and npm installed, start that server in one Terminal:
+These checks require a **separate empty memory-mode server**; they remove records they create and must not be pointed at the shared Filess.io database. With Node.js and npm installed, start that server in one Terminal:
 
 ```sh
 FITTRACK_PORT=8092 ./scripts/run --memory
@@ -726,23 +716,25 @@ This project already has `origin`. Check it with `git remote -v`; do not repeat 
 ### First deployment
 
 1. Push the application source to GitHub.
-2. Create the Aiven database tables using section 6.
+2. Create the Filess.io database tables using section 6.
 3. In Vercel choose **Add New → Project**, connect GitHub and import the `fittrack` repository.
 4. Use root directory `./` and the detected **Container** preset. Leave Build, Output and Install overrides unchanged.
 5. Add the following environment variables privately for the deployment environments you intend to use.
 
 | Name                        | Value                                                                                           |
 | --------------------------- | ----------------------------------------------------------------------------------------------- |
-| `PORT`                    | `8080`                                                                                        |
+| `PORT`                    | `8081`                                                                                        |
 | `FITTRACK_BIND_HOST`      | `0.0.0.0`                                                                                     |
-| `FITTRACK_DB_URL`         | `jdbc:mysql://mysql-38f18d54-fittrackerapp.h.aivencloud.com:19406/defaultdb?sslMode=REQUIRED` |
-| `FITTRACK_DB_USER`        | `avnadmin`, or a configured application database user                                         |
-| `FITTRACK_DB_PASSWORD`    | The matching Aiven user's database password                                                     |
+| `FITTRACK_DB_URL`         | `jdbc:mysql://684dco.h.filess.io:3306/fittrack_playpullno?sslMode=REQUIRED` |
+| `FITTRACK_DB_USER`        | `fittrack_playpullno`, or a configured application database user                                         |
+| `FITTRACK_DB_PASSWORD`    | The matching Filess.io user's database password                                                     |
 | `FITTRACK_ADMIN_USER`     | Chosen FitTrack sign-in username, with no colon                                                 |
 | `FITTRACK_ADMIN_PASSWORD` | Unique FitTrack sign-in password of at least 16 characters                                      |
 
+Set `FITTRACK_PORT` to `8081` as well, or remove it so Java uses `PORT`. These variables control the web server, not MySQL. Keep `3306` in the database URL only. `FITTRACK_API_URL` is used by test scripts and is not required by the hosted app.
+
 6. Click **Deploy** and inspect the build and runtime logs if it fails.
-7. Open the deployment URL and use the login page to sign in with the **FitTrack admin** details, not the Aiven database credentials. The Log out button ends that session.
+7. Open the deployment URL and use the login page to sign in with the **FitTrack admin** details, not the Filess.io database credentials. The Log out button ends that session.
 8. Add or edit a test record and confirm it appears in MySQL.
 
 Using the same database for Preview and Production means both deployments can change the same records. Use a separate test database if independent preview data is needed.
@@ -751,7 +743,7 @@ Using the same database for Preview and Production means both deployments can ch
 
 A push to the connected production branch normally starts a new Vercel deployment. Check its status in **Deployments**. Editing Vercel environment variables requires a new deployment before the changed values take effect. Use the deployment's menu → **Redeploy** when only settings have changed.
 
-Vercel redeploys do not create tables or execute the sample SQL. Aiven stores records separately from the application container, so redeploying the Java application does not reset the database.
+Vercel redeploys do not create tables or execute the sample SQL. Filess.io stores records separately from the application container, so redeploying the Java application does not reset the database.
 
 ## 15. Fix common problems
 
@@ -765,14 +757,15 @@ Vercel redeploys do not create tables or execute the sample SQL. Aiven stores re
 | `Use a sign-in password of at least 16 characters` | Set a longer`FITTRACK_ADMIN_PASSWORD`; redeploy if hosted.                                                                                    |
 | HTTP 401                                             | Sign-in is required or the credentials are incorrect. Use the admin variables or the member login given by the admin. Sign in again at `/login` if the session has ended. |
 | `Access denied for user`                           | Check the database username, password and account permissions. This is separate from webpage sign-in.                                           |
-| `No database selected`                             | Run`USE defaultdb;` for Aiven or `USE fittrack;` locally before table commands.                                                             |
+| `No database selected`                             | Run`USE fittrack_playpullno;` for Filess.io or `USE fittrack;` locally before table commands.                                                             |
 | `Table ... doesn't exist`                          | Create the tables in the same database named in`FITTRACK_DB_URL`.                                                                             |
-| Connection timeout or unknown host                   | Check the host, port, network and whether the Aiven service is running.                                                                         |
-| CA file or certificate error                         | Check the certificate path and download the CA certificate from the correct Aiven service.                                                      |
+| Connection timeout or unknown host                   | Check the host, port, network and whether the Filess.io service is running.                                                                         |
+| CA file or certificate error                         | Check the certificate path and use certificate details supplied by the current provider; a certificate from a different service will not verify this server.                                                      |
 | Workbench keeps spinning                             | Try MySQL Shell and inspect Workbench logs for the actual error.                                                                                |
 | Records disappear after stopping Java                | Check that Java was started with`--mysql`; memory mode does not save records.                                                                 |
 | Duplicate ID or email                                | Use an unused ID/email, or edit the existing record.                                                                                            |
 | Member deletion is blocked                           | Delete that member's workouts and challenges first.                                                                                             |
+| Vercel forwards to a different port | Set `PORT` and `FITTRACK_PORT` to `8081`, and `FITTRACK_BIND_HOST` to `0.0.0.0`, then redeploy. MySQL port `3306` belongs in the JDBC URL. |
 | Vercel HTTP 500 / function exited                    | Open the newest runtime log entry and expand all messages to find the actual Java exception.                                                    |
 | `origin already exists`                            | The Git remote is already set; inspect it with`git remote -v`.                                                                                |
 | Git has no user name or email                        | Configure your commit identity using section 13.                                                                                                |
@@ -794,7 +787,7 @@ Vercel redeploys do not create tables or execute the sample SQL. Aiven stores re
 | `.project`, `.classpath`, `.settings/`        | Eclipse Java and Maven configuration                                         |
 | `database/schema.sql`                             | Creates tables inside an already selected database                           |
 | `database/fittrack.sql`                           | Creates the local database, tables and local demonstration records           |
-| `database/sample-data.sql`                        | Adds the larger sample set to Aiven's`defaultdb`                           |
+| `database/sample-data.sql`                        | Adds the larger sample set to the selected database                           |
 | `scripts/mvn`                                     | Runs Maven, with a temporary development-install fallback                    |
 | `scripts/java-env.sh`                             | Finds Java for the workspace helper scripts                                  |
 | `scripts/run`                                     | Runs the built JAR                                                           |

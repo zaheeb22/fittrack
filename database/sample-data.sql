@@ -1,5 +1,4 @@
--- This selects the database used by this script.
-USE defaultdb;
+-- These sample records are added to the database selected in the client.
 -- This starts a transaction so the sample records can be saved together.
 START TRANSACTION;
 
