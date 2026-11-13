@@ -211,7 +211,7 @@ function renderPages() {
     const row = make('div', 'activity-row');
     const details = make('div');
     details.append(make('strong', '', workout.activityType), make('small', '', `${memberName(workout.memberId)} · ${showDate(workout.date)}`));
-    row.append(make('span', 'activity-icon', '↗'), details, make('span', '', `${workout.durationMinutes} min`));
+    row.append(details, make('span', '', `${workout.durationMinutes} min`));
     return row;
   });
   find('recent-workouts').replaceChildren(...(recentNodes.length ? recentNodes : [make('p', 'empty', access.role === 'MEMBER' ? 'No workouts recorded yet.' : 'No workouts yet. Record a session to get started.')]));

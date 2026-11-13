@@ -45,7 +45,7 @@ class FitnessHttpServerTest {
     var page = request("GET", "/", "");
     assertEquals(200, page.statusCode());
     assertTrue(page.headers().firstValue("Content-Type").orElseThrow().startsWith("text/html"));
-    assertTrue(page.body().contains("Your progress, in view."));
+    assertTrue(page.body().contains("id=\"overview-title\">Overview</h1>"));
     assertTrue(
         page.headers()
             .firstValue("Content-Security-Policy")
